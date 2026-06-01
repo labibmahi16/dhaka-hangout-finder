@@ -3,7 +3,7 @@ import { PLACES as FALLBACK_PLACES } from "../data/places"
 
 // Paste your Google Sheet CSV URL here after following the setup steps
 // It looks like: https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/export?format=csv&gid=0
-const SHEET_CSV_URL = ""
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTJElpDeIBaPWReKBF3i6Dys_XEvw6M9N5Tev1HaZtRNbCRwo3K7of-H7Tt56kC366SKcg0VGVDKCxv/pub?output=csv"
 
 // Parse a single CSV row, handling commas inside quoted fields
 function parseCSVRow(row) {
