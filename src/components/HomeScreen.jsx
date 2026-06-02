@@ -1,28 +1,86 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { CATEGORIES, RADII, BUDGETS } from "../data/places"
 
+const PLACE_PREVIEWS = [
+  { name: "Dhanmondi Lake",        emoji: "🌿", cat: "Park",       dist: "0.3 km" },
+  { name: "North End Coffee",      emoji: "☕", cat: "Café",       dist: "1.7 km" },
+  { name: "Hatirjheel Lake",       emoji: "🌊", cat: "Park",       dist: "2.4 km" },
+  { name: "Bashundhara City",      emoji: "🛍️", cat: "Mall",       dist: "3.1 km" },
+  { name: "Mirpur Botanical Garden",emoji: "🌳", cat: "Park",      dist: "3.8 km" },
+]
+
 export default function HomeScreen({ onSearch }) {
-  const [locationStatus, setLocationStatus] = useState("idle") // idle | loading | granted | denied
-  const [userLocation, setUserLocation] = useState(null)
-  const [selectedCats, setSelectedCats] = useState([])
+  const [locationStatus, setLocationStatus] = useState("idle")
+  const [userLocation, setUserLocation]     = useState(null)
+  const [locationName, setLocationName]     = useState("")
+  const [selectedCats, setSelectedCats]     = useState([])
   const [selectedRadius, setSelectedRadius] = useState(5)
   const [selectedBudgetMax, setSelectedBudgetMax] = useState(Infinity)
+  const [previewIdx, setPreviewIdx]         = useState(0)
+  const mapRef   = useRef(null)
+  const mapInst  = useRef(null)
+  const markerRef = useRef(null)
 
-  function detectLocation() {
-    if (!navigator.geolocation) {
-      alert("Your browser doesn't support location. Try Chrome or Firefox.")
-      return
-    }
+  // Cycle preview cards
+  useEffect(() => {
+    const t = setInterval(() => setPreviewIdx(i => (i + 1) % PLACE_PREVIEWS.length), 2500)
+    return () => clearInterval(t)
+  }, [])
+
+  // Init mini map after location granted
+  useEffect(() => {
+    if (locationStatus !== "granted" && locationStatus !== "denied") return
+    if (!userLocation || !mapRef.current) return
+    const L = window.L; if (!L) return
+    if (mapInst.current) { mapInst.current.remove(); mapInst.current = null }
+
+    const map = L.map(mapRef.current, {
+      center: [userLocation.lat, userLocation.lng],
+      zoom: 14,
+      zoomControl: false,
+      scrollWheelZoom: false,
+      dragging: false,
+      attributionControl: false,
+    })
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map)
+
+    // Pulsing user location marker
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="loc-dot"></div>`,
+      iconSize: [14, 14], iconAnchor: [7, 7],
+    })
+    markerRef.current = L.marker([userLocation.lat, userLocation.lng], { icon }).addTo(map)
+    mapInst.current = map
+    return () => { map.remove(); mapInst.current = null }
+  }, [locationStatus, userLocation])
+
+  async function detectLocation() {
+    if (!navigator.geolocation) { alert("Geolocation not supported. Try Chrome."); return }
     setLocationStatus("loading")
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords
+        setUserLocation({ lat, lng })
         setLocationStatus("granted")
+        // Reverse geocode with Nominatim (free, no key)
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+            { headers: { "Accept-Language": "en" } }
+          )
+          const data = await res.json()
+          const parts = [
+            data.address?.suburb || data.address?.neighbourhood || data.address?.town,
+            data.address?.city || data.address?.county,
+          ].filter(Boolean)
+          setLocationName(parts.join(", ") || "Dhaka")
+        } catch { setLocationName("Dhaka") }
       },
       () => {
-        // Fallback: use BRACU coordinates so the app still works
         setUserLocation({ lat: 23.7461, lng: 90.3742 })
         setLocationStatus("denied")
+        setLocationName("Dhanmondi, Dhaka (default)")
       }
     )
   }
@@ -34,139 +92,145 @@ export default function HomeScreen({ onSearch }) {
   }
 
   function handleSearch() {
-    onSearch({
-      userLocation,
-      radiusKm: selectedRadius,
-      categories: selectedCats,      // empty = all categories
-      budgetMax: selectedBudgetMax,
-    })
+    onSearch({ userLocation, radiusKm: selectedRadius, categories: selectedCats, budgetMax: selectedBudgetMax })
   }
 
+  const filtersVisible = locationStatus === "granted" || locationStatus === "denied"
+  const preview = PLACE_PREVIEWS[previewIdx]
+
   return (
-    <div className="flex flex-col min-h-screen">
-      {/* Hero */}
-      <div className="px-5 pt-10 pb-7 bg-white border-b border-gray-100">
-        <p className="text-xs font-medium tracking-widest text-brand-600 uppercase mb-2">
-          Dhaka, Bangladesh
-        </p>
-        <h1 className="font-syne text-3xl font-extrabold text-gray-900 leading-tight tracking-tight mb-2">
-          Find your next<br />hangout spot
-        </h1>
-        <p className="text-sm text-gray-500 leading-relaxed mb-6">
-          Parks, cafes, restaurants and more — filtered by your location and budget.
-        </p>
+    <div className="flex flex-col min-h-screen" style={{ background: "#0f1410" }}>
 
-        {locationStatus === "idle" && (
-          <button
-            onClick={detectLocation}
-            className="flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-800 transition-colors"
-          >
-            📍 Use my location
-          </button>
-        )}
-
-        {locationStatus === "loading" && (
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span className="animate-spin">⏳</span> Getting your location…
+      {/* ── Hero ── */}
+      <div className="hero-gradient px-5 pt-10 pb-8" style={{ minHeight: 260 }}>
+        <div className="dots-bg" />
+        <div style={{ position: "relative", zIndex: 2 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase", color: "#4a9e14" }}>
+              Dhaka, Bangladesh
+            </span>
+            <span style={{ width: 4, height: 4, borderRadius: "50%", background: "#4a9e14", display: "inline-block" }} />
           </div>
-        )}
+          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 32, fontWeight: 800, color: "#fff", lineHeight: 1.15, marginBottom: 10, letterSpacing: "-0.5px" }}>
+            Find your next<br />
+            <span style={{ color: "#4a9e14" }}>hangout</span> spot
+          </h1>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", lineHeight: 1.6, marginBottom: 20 }}>
+            Discover parks, cafes, restaurants and hidden gems near you in seconds.
+          </p>
 
-        {locationStatus === "granted" && (
-          <div className="flex items-center gap-2 text-sm text-brand-600 font-medium">
-            ✅ Location found — Dhaka
+          {/* Animated preview card */}
+          <div key={previewIdx} className="glass slide-up" style={{ borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+            <div style={{ fontSize: 26, width: 44, height: 44, borderRadius: 12, background: "rgba(74,158,20,0.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {preview.emoji}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview.name}</div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{preview.cat} · {preview.dist}</div>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "#4a9e14", background: "rgba(74,158,20,0.1)", border: "1px solid rgba(74,158,20,0.25)", borderRadius: 20, padding: "3px 10px" }}>
+              Nearby ✦
+            </div>
           </div>
-        )}
 
-        {locationStatus === "denied" && (
-          <div className="text-sm text-amber-700 bg-amber-50 rounded-lg px-4 py-2">
-            ⚠️ Location blocked — using Dhanmondi as default. You can still browse.
-          </div>
-        )}
+          {/* Location button */}
+          {locationStatus === "idle" && (
+            <button onClick={detectLocation} className="btn-primary" style={{ width: "100%", padding: "14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <span style={{ fontSize: 18 }}>📍</span>
+              Use my location
+            </button>
+          )}
+          {locationStatus === "loading" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "rgba(255,255,255,0.5)", fontSize: 14 }}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid rgba(74,158,20,0.3)", borderTopColor: "#4a9e14", animation: "spin 0.8s linear infinite" }} />
+              Detecting your location…
+            </div>
+          )}
+          {(locationStatus === "granted" || locationStatus === "denied") && (
+            <div style={{ background: "rgba(74,158,20,0.1)", border: "1px solid rgba(74,158,20,0.3)", borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>✅</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#86efac" }}>
+                  {locationStatus === "denied" ? "Using default location" : "Location found"}
+                </div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>{locationName}</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Filters — only shown after location step */}
-      {(locationStatus === "granted" || locationStatus === "denied") && (
-        <div className="px-5 py-6 flex flex-col gap-6 flex-1 bg-gray-50">
+      {/* Mini map */}
+      {filtersVisible && (
+        <div style={{ height: 140, margin: "0 0 0 0", position: "relative" }}>
+          <div ref={mapRef} style={{ height: "100%", width: "100%" }} />
+          <div style={{ position: "absolute", bottom: 8, left: 12, zIndex: 500, background: "rgba(15,20,16,0.85)", backdropFilter: "blur(8px)", border: "1px solid rgba(74,158,20,0.3)", borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 500, color: "#86efac" }}>
+            📍 {locationName}
+          </div>
+        </div>
+      )}
 
-          {/* Category filter */}
+      {/* ── Filters ── */}
+      {filtersVisible && (
+        <div style={{ padding: "24px 16px", display: "flex", flexDirection: "column", gap: 24, background: "#0f1410", flex: 1 }}>
+
+          {/* Categories */}
           <div>
-            <p className="text-xs font-semibold tracking-wide text-gray-400 uppercase mb-3">
-              What are you looking for?
-            </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="section-heading">What are you looking for?</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
               {CATEGORIES.map(cat => (
                 <button
                   key={cat.id}
                   onClick={() => toggleCategory(cat.id)}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all
-                    ${selectedCats.includes(cat.id)
-                      ? "bg-brand-50 border-green-300 text-green-800"
-                      : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"
-                    }`}
+                  className={`cat-chip ${selectedCats.includes(cat.id) ? "selected" : ""}`}
                 >
-                  <span>{cat.icon}</span>
-                  {cat.label}
+                  <div className="chip-check">✓</div>
+                  <span className="chip-icon">{cat.icon}</span>
+                  <span>{cat.label}</span>
                 </button>
               ))}
             </div>
             {selectedCats.length === 0 && (
-              <p className="text-xs text-gray-400 mt-2">No selection = show all categories</p>
+              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", marginTop: 8, textAlign: "center" }}>
+                No selection = show all categories
+              </p>
             )}
           </div>
 
-          {/* Radius filter */}
+          {/* Radius */}
           <div>
-            <p className="text-xs font-semibold tracking-wide text-gray-400 uppercase mb-3">
-              How far will you travel?
-            </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="section-heading">How far will you travel?</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {RADII.map(r => (
-                <button
-                  key={r}
-                  onClick={() => setSelectedRadius(r)}
-                  className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all
-                    ${selectedRadius === r
-                      ? "bg-brand-50 border-green-300 text-green-800 font-semibold"
-                      : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"
-                    }`}
-                >
+                <button key={r} onClick={() => setSelectedRadius(r)} className={`pill-btn ${selectedRadius === r ? "selected" : ""}`}>
                   {r} km
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Budget filter */}
+          {/* Budget */}
           <div>
-            <p className="text-xs font-semibold tracking-wide text-gray-400 uppercase mb-3">
-              Budget
-            </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="section-heading">Budget</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {BUDGETS.map(b => (
-                <button
-                  key={b.label}
-                  onClick={() => setSelectedBudgetMax(b.max)}
-                  className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all
-                    ${selectedBudgetMax === b.max
-                      ? "bg-brand-50 border-green-300 text-green-800 font-semibold"
-                      : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"
-                    }`}
-                >
+                <button key={b.label} onClick={() => setSelectedBudgetMax(b.max)} className={`pill-btn ${selectedBudgetMax === b.max ? "selected" : ""}`}>
                   {b.label}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Search button */}
-          <button
-            onClick={handleSearch}
-            className="w-full bg-brand-600 text-white py-3 rounded-xl font-syne font-bold text-base hover:bg-brand-800 transition-colors mt-auto"
-          >
-            Find places →
+          {/* Find button */}
+          <button onClick={handleSearch} className="btn-primary" style={{ width: "100%", padding: "16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>🔍</span>
+            Find places
+            <span style={{ marginLeft: 4 }}>→</span>
           </button>
         </div>
       )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

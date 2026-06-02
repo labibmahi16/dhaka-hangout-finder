@@ -282,22 +282,6 @@ export const PLACES = [
     bestTime: "4 PM – 9 PM",
     facilities: { food: true, seating: true, photography: true, parking: false },
   },
-
-  {
-  id: 21,
-  name: "MahirB Restaurant",
-  category: "rastaurant",
-  lat: 23.8094,
-  lng: 90.3681,
-  budget: "Under ৳300",
-  budgetMax: 300,
-  description: "An amazing place for friends, family and couple",
-  bestFor: ["Friends", "Family", "Couple"],
-  activities: ["Relaxation", "Time pass", "Quality time"],
-  bestTime: "4 PM – 8 PM",
-  facilities: { food: true, seating: true, photography: true, parking: false },
-},
-  
 ]
 
 export const CATEGORIES = [
