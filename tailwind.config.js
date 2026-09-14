@@ -7,6 +7,7 @@ export default {
         inter: ['Inter', 'sans-serif'],
       },
       colors: {
+        
         brand: {
           50:  '#f0fce4',
           100: '#d4f7a8',
